@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pokémon Card 3D Viewer</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg1: #0b0f1a;
+    --bg2: #101827;
+    --panel: rgba(16, 24, 39, 0.72);
+    --line: rgba(255, 255, 255, 0.08);
+    --text: #e8ecf4;
+    --muted: #93a0b8;
+    --accent: #ffd34d;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    background: radial-gradient(1200px 800px at 50% 30%, var(--bg2), var(--bg1));
+    overflow: hidden;
+  }
+  canvas#scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+
+  header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 22px;
+    background: linear-gradient(to bottom, rgba(11,15,26,0.85), transparent);
+  }
+  header h1 {
+    font-size: 15px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    margin: 0; white-space: nowrap; color: var(--accent);
+  }
+  header h1 small { display: block; font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+
+  .search-wrap { position: relative; flex: 1; max-width: 460px; margin: 0 auto; }
+  .search-row { display: flex; gap: 8px; }
+  #q {
+    flex: 1; min-width: 0;
+    padding: 9px 14px; border-radius: 10px;
+    border: 1px solid var(--line); outline: none;
+    background: rgba(255,255,255,0.05); color: var(--text); font-size: 14px;
+    backdrop-filter: blur(8px);
+  }
+  #q:focus { border-color: rgba(255,211,77,0.45); }
+  #lang {
+    padding: 9px 8px; border-radius: 10px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.05); color: var(--text); font-size: 13px; outline: none;
+    backdrop-filter: blur(8px);
+  }
+
+  #results {
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+    max-height: min(46vh, 380px); overflow-y: auto;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: rgba(11,15,26,0.92); backdrop-filter: blur(12px);
+    box-shadow: 0 18px 40px rgba(0,0,0,0.5);
+    display: none;
+  }
+  #results.open { display: block; }
+  .hit {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 8px 12px; border: 0; background: transparent; text-align: left; cursor: pointer;
+    color: var(--text);
+  }
+  .hit:hover, .hit.cur { background: rgba(255,255,255,0.07); }
+  .hit img { width: 34px; height: 47px; object-fit: contain; border-radius: 4px; flex: none; }
+  .hit .n { font-size: 13px; font-weight: 600; }
+  .hit .s { font-size: 11px; color: var(--muted); }
+  .hit .meta { margin-left: auto; flex: none; font-size: 11px; color: var(--muted); text-align: right; }
+  .status-line { padding: 10px 14px; font-size: 12px; color: var(--muted); }
+
+  aside#info {
+    position: fixed; left: 18px; top: 82px; bottom: 30px; z-index: 10;
+    width: min(340px, calc(100vw - 36px));
+    overflow-y: auto; padding: 18px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+    transform: translateX(-8px); opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  aside#info.show { transform: none; opacity: 1; pointer-events: auto; }
+  aside#info h2 { margin: 0 0 2px; font-size: 22px; line-height: 1.15; }
+  .card-id { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+  .setrow { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .setrow img { height: 22px; width: auto; }
+  .setrow span { font-size: 12px; color: var(--muted); }
+  .rarity { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; border: 1px solid var(--line); margin-bottom: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #10131a; }
+  .statline { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .statline b { color: var(--text); font-weight: 600; }
+  .attacks { display: flex; flex-direction: column; gap: 8px; }
+  .atk { border-top: 1px solid var(--line); padding-top: 8px; }
+  .atk .top { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  .atk .dmg { margin-left: auto; font-weight: 700; color: var(--accent); font-size: 14px; }
+  .atk .fx { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+  .ci { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 800; color: #10131a; flex: none; }
+  .foot { margin-top: 14px; font-size: 11px; color: var(--muted); line-height: 1.6; border-top: 1px solid var(--line); padding-top: 10px; }
+  .trait { display: block; margin-top: 4px; font-size: 12px; color: #bcd; }
+
+  #hint {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+    font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase;
+    background: rgba(11,15,26,0.55); padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line);
+  }
+  #status {
+    position: fixed; top: 18px; left: 50%; transform: translate(-50%, 0); z-index: 40;
+    font-size: 12px; color: var(--muted); padding: 8px 16px; border-radius: 10px;
+    background: rgba(11,15,26,0.85); border: 1px solid var(--line);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+    white-space: nowrap;
+  }
+  #status.show { opacity: 1; }
+  #empty { text-align: center; padding: 22px 30px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+
+  #optpanel {
+    position: fixed; right: 18px; top: 82px; z-index: 10;
+    width: 250px; padding: 16px 18px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  #optpanel h3 { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); }
+  #optpanel label.row { display: flex; align-items: center; gap: 10px; font-size: 13px; cursor: pointer; }
+  #optpanel label.row input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+  #optpanel .speed-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+  #optpanel .speed-label b { color: var(--accent); }
+  #optpanel input[type="range"] { width: 100%; accent-color: var(--accent); }
+  #optpanel input[type="range"]:disabled { opacity: 0.4; }
+  #optpanel button {
+    padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.06); color: var(--text); font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: background 0.15s ease;
+  }
+  #optpanel button:hover { background: rgba(255,211,77,0.16); border-color: rgba(255,211,77,0.35); }
+
+  body.obs { background: transparent; }
+  body.obs header, body.obs #info, body.obs #hint, body.obs #status { display: none; }
+  body.obs #optpanel { top: 50%; transform: translateY(-50%); }
+
+  @media (max-width: 760px) {
+    #optpanel { left: 10px; right: 10px; width: auto; top: auto; bottom: 12px; flex-direction: row; flex-wrap: wrap; align-items: center; }
+    header { flex-direction: column; gap: 10px; padding: 12px 14px; }
+    .search-wrap { max-width: 100%; width: 100%; margin: 0; }
+    aside#info { left: 10px; right: 10px; width: auto; top: 150px; bottom: 14px; }
+    #hint { display: none; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <header>
+    <h1>Poke3D<small>tcgdex viewer</small></h1>
+    <div class="search-wrap">
+      <div class="search-row">
+        <input id="q" placeholder="Search a card… (try charizard)" autocomplete="off" spellcheck="false">
+        <select id="lang" title="Language"></select>
+      </div>
+      <div id="results"></div>
+    </div>
+  </header>
+
+  <aside id="info"></aside>
+  <div id="hint">drag rotate · scroll zoom</div>
+  <div id="status"></div>
+
+  <aside id="optpanel">
+    <h3>Options</h3>
+    <label class="row"><input type="checkbox" id="opt-obs"> Transparent (OBS)</label>
+    <label class="row"><input type="checkbox" id="opt-rot"> Auto-rotate</label>
+    <div>
+      <div class="speed-label"><span>Rotate speed</span><b id="speed-val">1.5</b></div>
+      <input type="range" id="opt-speed" min="0.1" max="6" step="0.1" value="1.5">
+    </div>
+    <button id="opt-front">Reset view · full front</button>
+  </aside>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.min.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+    const LANGS = [
+      ['en', 'English'], ['fr', 'Français'], ['de', 'Deutsch'], ['es', 'Español'],
+      ['it', 'Italiano'], ['pt-br', 'Português (BR)'], ['ja', '日本語'],
+      ['zh-tw', '繁體中文'], ['id', 'Indonesia'], ['th', 'ไทย']
+    ];
+
+    const TYPE_COLORS = {
+      grass: '#7db54a', fire: '#e8683a', water: '#3e9ed6', lightning: '#edc233',
+      psychic: '#b05cc0', fighting: '#c96f4a', darkness: '#565870', metal: '#9fb2bc',
+      dragon: '#b08a3e', fairy: '#e38fcb', colorless: '#d8d2ba'
+    };
+
+    const CARD = { w: 2.0, h: 2.0 * 88 / 63, r: 0.12, t: 0.018 };
+    const API = (lang, path) => 'https://api.tcgdex.net/v2/' + encodeURIComponent(lang) + '/' + path;
+    const STATE = { lang: 'en', card: null, pulseMat: null, animStart: 0 };
+
+    const $ = (id) => document.getElementById(id);
+    const qEl = $('q'), resultsEl = $('results'), langEl = $('lang');
+    const infoEl = $('info'), statusEl = $('status');
+    const esc = (s) => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+    for (const [code, label] of LANGS) {
+      const o = document.createElement('option');
+      o.value = code; o.textContent = label;
+      if (code === STATE.lang) o.selected = true;
+      langEl.appendChild(o);
+    }
+
+    let hitList = [];
+    let hitCur = -1;
+
+    const memCache = new Map();
+    function cacheGet(key) {
+      const hit = memCache.get(key);
+      if (hit && hit.t > Date.now()) return hit.data;
+      return null;
+    }
+    function cacheSet(key, data, ttlMs) {
+      memCache.set(key, { t: Date.now() + ttlMs, data });
+      try {
+        const raw = localStorage.getItem('pc_cache_v1');
+        const store = raw ? JSON.parse(raw) : {};
+        store[key] = { t: Date.now() + ttlMs, data };
+        const keys = Object.keys(store);
+        if (keys.length > 120) {
+          for (const k of keys.sort((a, b) => store[a].t - store[b].t).slice(0, keys.length - 120)) delete store[k];
+        }
+        localStorage.setItem('pc_cache_v1', JSON.stringify(store));
+      } catch (e) { /* storage unavailable */ }
+    }
+    async function apiGet(path, ttlMs = 10 * 60 * 1000) {
+      const key = STATE.lang + '|' + path;
+      const cached = cacheGet(key);
+      if (cached) return cached;
+      let hit = null;
+      try {
+        const raw = localStorage.getItem('pc_cache_v1');
+        if (raw) {
+          const store = JSON.parse(raw);
+          hit = store[key];
+          if (hit && hit.t <= Date.now()) hit = null;
+        }
+      } catch (e) { /* ignore */ }
+      if (hit) {
+        memCache.set(key, hit);
+        return hit.data;
+      }
+      const res = await fetch(API(STATE.lang, path));
+      if (!res.ok) throw new Error('status ' + res.status);
+      const data = await res.json();
+      cacheSet(key, data, ttlMs);
+      return data;
+    }
+
+    const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin('anonymous');
+
+    const renderer = new THREE.WebGLRenderer({ canvas: $('scene'), antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 60);
+    camera.position.set(2.7, 0.7, 3.3);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = false;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 1.5;
+    controls.minDistance = 2.0;
+    controls.maxDistance = 7.0;
+    controls.minPolarAngle = 0.6;
+    controls.maxPolarAngle = 1.5;
+
+    let savedOpts = {};
+    try { savedOpts = JSON.parse(localStorage.getItem('pc_opts_v1')) || {}; } catch (e) { /* ignore */ }
+    controls.autoRotate = savedOpts.rot !== false;
+    controls.autoRotateSpeed = Number(savedOpts.speed) || 1.5;
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x14121a, 0.55));
+    const key = new THREE.DirectionalLight(0xffffff, 1.8);
+    key.position.set(4, 6, 5);
+    scene.add(key);
+
+    const rootGroup = new THREE.Group();
+    scene.add(rootGroup);
+    const magicGroup = new THREE.Group();
+    rootGroup.add(magicGroup);
+
+    function shadowTexture() {
+      const c = document.createElement('canvas');
+      c.width = c.height = 256;
+      const g = c.getContext('2d');
+      const grad = g.createRadialGradient(128, 128, 10, 128, 128, 128);
+      grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 256, 256);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    }
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(1.5, 48),
+      new THREE.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = -CARD.h / 2 - 0.04;
+    rootGroup.add(shadow);
+
+    function roundedRectShape(w, h, r) {
+      const s = new THREE.Shape();
+      const x = -w / 2, y = -h / 2;
+      s.moveTo(x + r, y);
+      s.lineTo(x + w - r, y);
+      s.quadraticCurveTo(x + w, y, x + w, y + r);
+      s.lineTo(x + w, y + h - r);
+      s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      s.lineTo(x + r, y + h);
+      s.quadraticCurveTo(x, y + h, x, y + h - r);
+      s.lineTo(x, y + r);
+      s.quadraticCurveTo(x, y, x + r, y);
+      return s;
+    }
+    function setQuadUV(geo, w, h) {
+      const uv = geo.attributes.uv;
+      const pos = geo.attributes.position;
+      for (let i = 0; i < uv.count; i++) {
+        uv.setXY(i, pos.getX(i) / w + 0.5, pos.getY(i) / h + 0.5);
+      }
+    }
+    function setQuadUVMirror(geo, w, h) {
+      const uv = geo.attributes.uv;
+      const pos = geo.attributes.position;
+      for (let i = 0; i < uv.count; i++) {
+        uv.setXY(i, 0.5 - pos.getX(i) / w, pos.getY(i) / h + 0.5);
+      }
+    }
+
+    const cardShape = roundedRectShape(CARD.w, CARD.h, CARD.r);
+
+    function placeholderTexture(name, sub, base) {
+      const c = document.createElement('canvas');
+      c.width = 600; c.height = 826;
+      const g = c.getContext('2d');
+      const grad = g.createLinearGradient(0, 0, 0, 826);
+      grad.addColorStop(0, base || '#1d2b45');
+      grad.addColorStop(1, base ? '#0e1526' : '#101a30');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 600, 826);
+      g.textAlign = 'center';
+      if (name) {
+        g.fillStyle = 'rgba(255,255,255,0.9)';
+        g.font = '700 40px "Segoe UI", system-ui, sans-serif';
+        g.fillText(name.slice(0, 14), 300, 398);
+      }
+      if (sub) {
+        g.fillStyle = 'rgba(255,255,255,0.45)';
+        g.font = '20px "Segoe UI", system-ui, sans-serif';
+        g.fillText(sub.slice(0, 20), 300, 430);
+      }
+      g.fillStyle = 'rgba(255,255,255,0.22)';
+      g.font = '16px "Segoe UI", system-ui, sans-serif';
+      g.fillText('no art', 300, 466);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    }
+
+    function glowTexture(color) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 256;
+      const g = c.getContext('2d');
+      const grad = g.createRadialGradient(128, 128, 20, 128, 128, 128);
+      const css = typeof color === 'number' ? '#' + color.toString(16).padStart(6, '0') : color;
+      grad.addColorStop(0, css);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 256, 256);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    }
+
+    let backTex = null;
+    function preloadBack() {
+      loader.load('./card-back.png',
+        (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+          backTex = tex;
+          if (STATE.backMesh && STATE.backMesh.material) {
+            STATE.backMesh.material.map = tex;
+            STATE.backMesh.material.needsUpdate = true;
+          }
+        },
+        undefined,
+        () => { /* fallback if missing */ }
+      );
+    }
+
+    function presetFor(card) {
+      const text = (card.rarity || '').toLowerCase();
+      const v = card.variants || {};
+      const base = {
+        roughness: 0.58, clearcoat: 0.25, clearcoatRoughness: 0.5,
+        iridescence: 0, thickness: [100, 400], env: 0.35,
+        glow: null, pulse: false
+      };
+      const special = /illustration|hyper|rainbow|secret|shiny.*ultra|gold/.test(text);
+      const radiant = /radiant/.test(text);
+      const ultra = /ultra|double|amazing/.test(text);
+      const holo = /\bholo\b|holofoil/.test(text) || v.holo;
+      const rev = v.reverse;
+      if (special) {
+        return Object.assign(base, {
+          roughness: 0.24, clearcoat: 1, clearcoatRoughness: 0.18,
+          iridescence: 1.0, thickness: [160, 620], env: 1.6,
+          glow: /hyper|rainbow|gold/.test(text) ? 0xffca3a : 0x59a5ff
+        });
+      }
+      if (radiant) {
+        return Object.assign(base, { roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.25, iridescence: 0.5, env: 1.2, glow: 0x4dffa6, pulse: true });
+      }
+      if (ultra) {
+        return Object.assign(base, { roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.25, iridescence: 0.85, thickness: [140, 520], env: 1.4, glow: 0xbf82ff });
+      }
+      if (holo) {
+        return Object.assign(base, { roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.25, iridescence: 0.65, env: 1.25 });
+      }
+      if (rev) {
+        return Object.assign(base, { roughness: 0.4, clearcoat: 0.7, clearcoatRoughness: 0.35, iridescence: 0.45, env: 1.0 });
+      }
+      return base;
+    }
+
+    function makeFrontMaterial(map, preset) {
+      const m = new THREE.MeshPhysicalMaterial({
+        map, alphaTest: 0.5, side: THREE.FrontSide,
+        roughness: preset.roughness,
+        clearcoat: preset.clearcoat,
+        clearcoatRoughness: preset.clearcoatRoughness,
+        iridescence: preset.iridescence,
+        iridescenceIOR: 1.3,
+        iridescenceThicknessRange: preset.thickness,
+        envMapIntensity: preset.env,
+        metalness: 0
+      });
+      m.userData.pulse = preset.pulse;
+      if (preset.pulse) {
+        m.emissive = new THREE.Color(0x4dffa6);
+        m.emissiveIntensity = 0.2;
+      }
+      return m;
+    }
+
+    function heroTextureChain(card, front, preset) {
+      const VARIANTS = ['/high.webp', '/high.png', '/low.webp', '/low.png'];
+      const scan = (exts, round) => {
+        if (!exts.length) {
+          if (round < 6) setTimeout(() => scan(VARIANTS.slice(), round + 1), 1200 * (round + 1));
+          return;
+        }
+        const ext = exts.shift();
+        loader.load(card.image + ext + (round ? '?r=' + round : ''), (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+          if (STATE.card !== card) return;
+          const realMat = makeFrontMaterial(tex, preset);
+          realMat.polygonOffset = true;
+          realMat.polygonOffsetFactor = -1;
+          front.material.dispose();
+          front.material = realMat;
+          if (preset.pulse) STATE.pulseMat = realMat;
+        }, undefined, () => scan(exts, round));
+      };
+      scan(VARIANTS.slice(), 0);
+    }
+
+    function swapCard(card) {
+      disposeCard();
+      STATE.pulseMat = null;
+      STATE.card = card;
+
+      const frontShapeGeo = new THREE.ShapeGeometry(cardShape, 40);
+      setQuadUV(frontShapeGeo, CARD.w, CARD.h);
+      const backShapeGeo = new THREE.ShapeGeometry(cardShape, 40);
+      setQuadUVMirror(backShapeGeo, CARD.w, CARD.h);
+
+      const bodyGeo = new THREE.ExtrudeGeometry(cardShape, { depth: CARD.t, curveSegments: 40, bevelEnabled: false });
+      const body = new THREE.Mesh(bodyGeo, new THREE.MeshStandardMaterial({ color: 0x141c2e, roughness: 0.35, metalness: 0.2, envMapIntensity: 0.4 }));
+
+      const backMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness: 0.5, metalness: 0, envMapIntensity: 0.3, side: THREE.DoubleSide });
+      if (backTex) backMat.map = backTex;
+      const back = new THREE.Mesh(backShapeGeo, backMat);
+      back.position.z = -0.004;
+
+      const preset = presetFor(card);
+      const frontPlaceholder = makeFrontMaterial(placeholderTexture(card.name, card.category, null), preset);
+      const front = new THREE.Mesh(frontShapeGeo, frontPlaceholder);
+      front.position.z = CARD.t + 0.004;
+      front.material.polygonOffset = true;
+      front.material.polygonOffsetFactor = -1;
+
+      magicGroup.add(body, back, front);
+      STATE.backMesh = back;
+      STATE.frontMesh = front;
+
+      if (preset.glow) {
+        const glow = new THREE.Mesh(
+          new THREE.PlaneGeometry(CARD.w * 1.25, CARD.h * 1.25),
+          new THREE.MeshBasicMaterial({ map: glowTexture(preset.glow), transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide })
+        );
+        glow.position.z = -CARD.t - 0.15;
+        magicGroup.add(glow);
+      }
+
+      if (card.image) {
+        heroTextureChain(card, front, preset);
+      }
+
+      STATE.animStart = performance.now();
+    }
+
+    function disposeCard() {
+      while (magicGroup.children.length) {
+        const c = magicGroup.children.pop();
+        if (c.material) {
+          if (c.material.map && c.material.map.isTexture) c.material.map.dispose();
+          c.material.dispose();
+        }
+        if (c.geometry) c.geometry.dispose();
+      }
+      STATE.backMesh = null;
+      STATE.frontMesh = null;
+    }
+
+    function typeChip(t) {
+      const col = TYPE_COLORS[t.toLowerCase()] || '#9aa4b5';
+      return '<span class="chip" style="background:' + col + '">' + esc(t) + '</span>';
+    }
+    function costIcon(t) {
+      const col = TYPE_COLORS[t.toLowerCase()] || '#9aa4b5';
+      return '<span class="ci" style="background:' + col + '" title="' + esc(t) + '">' + esc(t.charAt(0).toUpperCase()) + '</span>';
+    }
+
+    function renderInfo(card) {
+      let html = '';
+      html += '<h2>' + esc(card.name) + '</h2>';
+      html += '<div class="card-id">' + esc(card.set.name) + ' · ' + esc(card.category) +
+        (card.localId != null ? ' · ' + esc(card.localId) : '') + '</div>';
+
+      if (card.set.logo) html += '<div class="setrow"><img src="' + esc(card.set.logo) + '.webp" alt="" onerror="this.style.display=\'none\'"><span>' + esc(card.set.name) + '</span></div>';
+
+      html += '<span class="rarity">' + esc(card.rarity || '') + '</span>';
+
+      if (card.types && card.types.length) html += '<div class="chips">' + card.types.map(typeChip).join('') + '</div>';
+
+      const statPills = [];
+      if (card.hp != null) statPills.push('<span>HP <b>' + card.hp + '</b></span>');
+      if (card.stage) statPills.push('<span>Stage <b>' + esc(card.stage) + '</b></span>');
+      if (card.evolveFrom) statPills.push('<span>Evolves from <b>' + esc(card.evolveFrom) + '</b></span>');
+      if (card.trainerType) statPills.push('<span>Type <b>' + esc(card.trainerType) + '</b></span>');
+      if (card.energyType) statPills.push('<span>Type <b>' + esc(card.energyType) + '</b></span>');
+      if (card.level != null && card.level !== '') statPills.push('<span>Level <b>' + esc(card.level) + '</b></span>');
+      if (card.retreat != null) statPills.push('<span>Retreat <b>' + card.retreat + '</b></span>');
+      if (statPills.length) html += '<div class="statline">' + statPills.join('') + '</div>';
+
+      if (card.attacks && card.attacks.length) {
+        html += '<div class="attacks">';
+        for (const a of card.attacks) {
+          let cost = '';
+          if (a.cost) cost = a.cost.map(costIcon).join('');
+          html += '<div class="atk"><div class="top">' + cost + '<span>' + esc(a.name) + '</span>' +
+            (a.damage != null ? '<span class="dmg">' + esc(a.damage) + '</span>' : '') + '</div>' +
+            (a.effect ? '<div class="fx">' + esc(a.effect) + '</div>' : '') + '</div>';
+        }
+        html += '</div>';
+      }
+
+      const foot = [];
+      if (card.ability) foot.push('<span class="trait"><b>Ability — ' + esc(card.ability.name) + ':</b> ' + esc(card.ability.effect) + '</span>');
+      if (card.effect) foot.push('<span class="trait">' + esc(card.effect) + '</span>');
+      if (card.description) foot.push('<span class="trait">' + esc(card.description) + '</span>');
+      if (card.weaknesses && card.weaknesses.length) foot.push('<span class="trait">Weakness: ' + card.weaknesses.map(w => esc(w.type) + ' ' + esc(w.value)).join(', ') + '</span>');
+      if (card.resistances && card.resistances.length) foot.push('<span class="trait">Resistance: ' + card.resistances.map(r => esc(r.type) + ' ' + esc(r.value)).join(', ') + '</span>');
+      if (card.illustrator) foot.push('Illustrator: ' + esc(card.illustrator));
+      if (card.regulationMark) foot.push('Regulation mark: ' + esc(card.regulationMark));
+      if (foot.length) html += '<div class="foot">' + foot.join('<br>') + '</div>';
+
+      infoEl.innerHTML = html;
+      infoEl.classList.add('show');
+    }
+
+    function showStatus(msg) {
+      statusEl.textContent = msg;
+      statusEl.classList.add('show');
+      clearTimeout(showStatus._t);
+      showStatus._t = setTimeout(() => statusEl.classList.remove('show'), 1600);
+    }
+
+    async function loadCard(id) {
+      showStatus('Loading ' + id + '…');
+      try {
+        const card = await apiGet('cards/' + encodeURIComponent(id));
+        swapCard(card);
+        renderInfo(card);
+        history.replaceState(null, '', '#' + encodeURIComponent(card.id));
+        document.title = card.name + ' — Poke3D';
+        showStatus(card.name);
+      } catch (e) {
+        const langName = (LANGS.find(l => l[0] === STATE.lang) || [''])[1];
+        showStatus(/404/.test(String(e.message)) ? 'Not translated in ' + langName : 'Could not load: ' + String((e && e.message) || e));
+      }
+    }
+
+    function buildResults(list) {
+      resultsEl.innerHTML = '';
+      if (!list || !list.length) {
+        resultsEl.innerHTML = '<div class="status-line">No matching cards.</div>';
+        resultsEl.classList.add('open');
+        hitList = [];
+        return;
+      }
+      for (const b of list) {
+        const btn = document.createElement('button');
+        btn.className = 'hit';
+        btn.tabIndex = -1;
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.alt = '';
+        if (b.image) {
+          img.src = b.image + '/low.webp';
+          img.onerror = () => { if (img.src.indexOf('.png') === -1) img.src = b.image + '/low.png'; else img.remove(); };
+        }
+        const n = document.createElement('span');
+        n.className = 'n';
+        n.textContent = b.name;
+        const s = document.createElement('span');
+        s.className = 's';
+        s.textContent = b.set ? b.set.name : '';
+        const meta = document.createElement('span');
+        meta.className = 'meta';
+        meta.textContent = (b.category || '') + (b.localId != null ? ' · ' + b.localId : '');
+        const wrapL = document.createElement('span');
+        wrapL.style.display = 'flex';
+        wrapL.style.flexDirection = 'column';
+        wrapL.appendChild(n);
+        wrapL.appendChild(s);
+        btn.appendChild(img);
+        btn.appendChild(wrapL);
+        btn.appendChild(meta);
+        btn.addEventListener('click', () => {
+          closeResults();
+          loadCard(b.id);
+        });
+        resultsEl.appendChild(btn);
+      }
+      hitList = Array.from(resultsEl.querySelectorAll('.hit'));
+      resultsEl.classList.add('open');
+    }
+
+    function closeResults() {
+      resultsEl.classList.remove('open');
+      hitCur = -1;
+    }
+
+    async function doSearch(query) {
+      if (query.length < 2) { closeResults(); return; }
+      let list = [];
+      try {
+        list = await apiGet('cards?name=' + encodeURIComponent(query) +
+          '&pagination:page=1&pagination:itemsPerPage=10');
+      } catch (e) {
+        closeResults();
+        return;
+      }
+      if (STATE.lastQuery !== query) return;
+      buildResults(list);
+      hitCur = -1;
+    }
+
+    const debounced = debounce((v) => { STATE.lastQuery = v; doSearch(v); }, 260);
+    function debounce(fn, ms) {
+      let t;
+      return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+    }
+
+    qEl.addEventListener('input', () => {
+      const v = qEl.value.trim();
+      if (v.length < 2) closeResults();
+      debounced(v);
+    });
+    qEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { closeResults(); return; }
+      if (!resultsEl.classList.contains('open') || !hitList.length) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        hitCur = (hitCur + 1) % hitList.length;
+        highlight();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        hitCur = (hitCur - 1 + hitList.length) % hitList.length;
+        highlight();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const idx = hitCur < 0 ? 0 : hitCur;
+        if (hitList[idx]) {
+          closeResults();
+          hitList[idx].click();
+        }
+      }
+    });
+    function highlight() {
+      hitList.forEach((el, i) => el.classList.toggle('cur', i === hitCur));
+    }
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-wrap')) closeResults();
+    });
+
+    langEl.addEventListener('change', () => {
+      STATE.lang = langEl.value;
+      if (STATE.card) loadCard(STATE.card.id);
+    });
+
+    const optEls = {
+      obs: $('opt-obs'), rot: $('opt-rot'),
+      speed: $('opt-speed'), speedVal: $('speed-val'), front: $('opt-front')
+    };
+    optEls.obs.checked = !!savedOpts.obs;
+    optEls.rot.checked = controls.autoRotate;
+    optEls.speed.value = String(controls.autoRotateSpeed);
+    optEls.speedVal.textContent = String(controls.autoRotateSpeed);
+    optEls.speed.disabled = !controls.autoRotate;
+    if (savedOpts.obs) document.body.classList.add('obs');
+
+    function saveOpts() {
+      try {
+        localStorage.setItem('pc_opts_v1', JSON.stringify({
+          obs: optEls.obs.checked, rot: optEls.rot.checked, speed: optEls.speed.value
+        }));
+      } catch (e) { /* ignore */ }
+    }
+    optEls.obs.addEventListener('change', () => {
+      document.body.classList.toggle('obs', optEls.obs.checked);
+      saveOpts();
+    });
+    optEls.rot.addEventListener('change', () => {
+      controls.autoRotate = optEls.rot.checked;
+      optEls.speed.disabled = !optEls.rot.checked;
+      saveOpts();
+    });
+    optEls.speed.addEventListener('input', () => {
+      controls.autoRotateSpeed = Number(optEls.speed.value);
+      optEls.speedVal.textContent = optEls.speed.value;
+      saveOpts();
+    });
+    let viewTween = null;
+    optEls.front.addEventListener('click', () => {
+      const dist = THREE.MathUtils.clamp(camera.position.length(), 2.4, 7.0);
+      viewTween = {
+        from: camera.position.clone(),
+        fromTarget: controls.target.clone(),
+        to: new THREE.Vector3(0, 0.02, dist),
+        t0: performance.now(), dur: 650
+      };
+    });
+
+    function onHash() {
+      const id = decodeURIComponent(location.hash.replace(/^#/, ''));
+      if (id && id !== (STATE.card && STATE.card.id)) loadCard(id);
+    }
+    window.addEventListener('hashchange', onHash);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const t = now / 1000;
+      controls.update();
+      magicGroup.position.y = Math.sin(t * 1.1) * 0.02;
+      if (viewTween) {
+        const k = Math.min(1, (now - viewTween.t0) / viewTween.dur);
+        const e = 1 - Math.pow(1 - k, 3);
+        camera.position.lerpVectors(viewTween.from, viewTween.to, e);
+        controls.target.lerpVectors(viewTween.fromTarget, new THREE.Vector3(0, 0, 0), e);
+        if (k >= 1) viewTween = null;
+      }
+      if (STATE.animStart) {
+        const k = Math.min(1, (now - STATE.animStart) / 500);
+        const ease = 1 - Math.pow(1 - k, 3);
+        magicGroup.scale.setScalar(0.001 + ease * 0.999);
+        if (k >= 1) STATE.animStart = 0;
+      }
+      if (STATE.pulseMat) {
+        STATE.pulseMat.emissiveIntensity = 0.15 + 0.25 * (0.5 + 0.5 * Math.sin(t * 3.2));
+      }
+      renderer.render(scene, camera);
+    }
+
+    preloadBack();
+
+    const seed = decodeURIComponent(location.hash.replace(/^#/, '')) || 'sv03-223';
+    loadCard(seed);
+
+    animate(performance.now());
+  </script>
+</body>
+</html>
