@@ -7,4 +7,4 @@ A 3d Pokémon TCG viewer.
 
 ## Credits
 
--[TCGdex](https://tcgdex.dev/)
+- [TCGdex](https://tcgdex.dev/)
