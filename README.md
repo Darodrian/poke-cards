@@ -1,3 +1,10 @@
-# Pokémon Cards — 3D Viewer
+# poke-cards
 
-A 3D Pokémon card viewer.
+A 3d Pokémon TCG viewer.
+
+[View](https://darodrian.github.io/poke-cards/)
+
+
+## Credits
+
+-[TCGdex](https://tcgdex.dev/)
